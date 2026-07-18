@@ -1,0 +1,25 @@
+pub mod connection_manager;
+pub mod discovery;
+pub mod error;
+pub mod ffi;
+pub mod identity;
+pub mod noise_session;
+pub mod protocol;
+pub mod signaling;
+pub mod signaling_client;
+pub mod storage;
+pub mod stun_client;
+pub mod transfer;
+pub mod transport;
+
+pub use connection_manager::{ConnectionManager, EventSink, PeerSession};
+pub use discovery::{Discovery, DiscoveredPeer, DiscoveryMethod};
+pub use error::{CoreError, Result};
+pub use identity::DeviceIdentity;
+pub use noise_session::{NoiseSession, Role};
+pub use protocol::{FileOffer, ProtocolMessage, TextMessage};
+pub use signaling::SignalingMessage;
+pub use signaling_client::{SignalingClient, SignalingEvent};
+pub use storage::Storage;
+pub use transfer::{FileSource, TransferHandle, TransferProgress, TransferState};
+pub use transport::QuicTransport;

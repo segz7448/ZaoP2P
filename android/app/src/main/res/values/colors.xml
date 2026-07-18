@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bubble_outgoing">#1E88E5</color>
+    <color name="bubble_incoming">#2A2D34</color>
+    <color name="chat_background">#14161A</color>
+    <color name="text_primary">#F0F0F0</color>
+    <color name="text_secondary">#9AA0A6</color>
+    <color name="online_green">#4CAF50</color>
+</resources>

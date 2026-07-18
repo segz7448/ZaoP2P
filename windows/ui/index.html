@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Zao P2P</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    background: #14161a;
+    color: #f0f0f0;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 260px;
+    background: #1a1d24;
+    border-right: 1px solid #262a33;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+  }
+  #sidebar h2 { font-size: 14px; color: #9aa0a6; font-weight: 600; margin: 8px 0; }
+  .peer-btn {
+    text-align: left;
+    background: #22262f;
+    color: #f0f0f0;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .peer-btn:hover { background: #2a2f3a; }
+  .peer-btn.active { background: #1e88e5; }
+  #self-info { font-size: 11px; color: #9aa0a6; padding: 8px; word-break: break-all; }
+
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #status-bar { padding: 10px 16px; font-size: 12px; color: #9aa0a6; border-bottom: 1px solid #262a33; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+
+  .bubble-row { display: flex; }
+  .bubble-row.outgoing { justify-content: flex-end; }
+  .bubble-row.incoming { justify-content: flex-start; }
+  .bubble {
+    max-width: 60%;
+    padding: 10px 12px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+  .bubble.outgoing { background: #1e88e5; }
+  .bubble.incoming { background: #2a2d34; }
+  .bubble .meta { font-size: 10px; color: #cfd8dc; margin-top: 4px; text-align: right; }
+
+  /* File transfer bubble */
+  .file-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 220px;
+  }
+  .file-card .file-header { display: flex; align-items: center; gap: 8px; }
+  .file-card .file-icon { font-size: 20px; }
+  .file-card .file-name { font-size: 13px; font-weight: 600; word-break: break-all; }
+  .file-card .file-size { font-size: 11px; color: #cfd8dc; }
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill { height: 100%; background: #4caf50; width: 0%; transition: width 0.2s; }
+  .file-stats { font-size: 10px; color: #cfd8dc; display: flex; justify-content: space-between; }
+  .file-actions { display: flex; gap: 6px; }
+  .file-actions button {
+    flex: 1;
+    font-size: 11px;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: #33384280;
+    color: #f0f0f0;
+  }
+  .file-actions button.primary { background: #1e88e5; }
+  .file-actions button.danger { background: #c62828; }
+
+  #typing-indicator { padding: 4px 16px; font-size: 12px; font-style: italic; color: #9aa0a6; min-height: 20px; }
+
+  #input-bar { display: flex; padding: 12px; gap: 8px; border-top: 1px solid #262a33; align-items: flex-end; }
+  #attach-btn {
+    background: #22262f;
+    color: #f0f0f0;
+    border: none;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 18px;
+  }
+  #attach-btn:hover { background: #2a2f3a; }
+  #message-input {
+    flex: 1;
+    background: #22262f;
+    border: none;
+    border-radius: 8px;
+    color: #f0f0f0;
+    padding: 10px 12px;
+    font-size: 14px;
+    resize: none;
+  }
+  #send-btn {
+    background: #1e88e5;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0 20px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  #send-btn:hover { background: #1976d2; }
+
+  #drop-zone {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(30, 136, 229, 0.15);
+    border: 3px dashed #1e88e5;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #1e88e5;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Incoming file offer modal */
+  #offer-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+  }
+  #offer-modal .card {
+    background: #1e2128;
+    border-radius: 12px;
+    padding: 20px;
+    width: 320px;
+  }
+  #offer-modal h3 { margin: 0 0 8px; font-size: 15px; }
+  #offer-modal p { margin: 4px 0; font-size: 13px; color: #cfd8dc; }
+  #offer-modal .actions { display: flex; gap: 8px; margin-top: 16px; }
+  #offer-modal button {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #offer-accept { background: #1e88e5; color: white; }
+  #offer-reject { background: #33384280; color: #f0f0f0; }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <div id="self-info">loading identity…</div>
+    <h2>Nearby devices</h2>
+    <div id="peer-list"></div>
+    <button id="internet-connect-btn" class="peer-btn" style="margin-top: 12px; background: #263042;">
+      🌐 Connect over the internet…
+    </button>
+  </div>
+
+  <div id="main" style="position: relative;">
+    <div id="status-bar">Select a device to start chatting</div>
+    <div id="messages"></div>
+    <div id="typing-indicator"></div>
+    <div id="input-bar">
+      <button id="attach-btn" title="Send a file">📎</button>
+      <textarea id="message-input" rows="1" placeholder="Message"></textarea>
+      <button id="send-btn">Send</button>
+    </div>
+    <div id="drop-zone">Drop files to send</div>
+  </div>
+
+  <div id="offer-modal">
+    <div class="card">
+      <h3>Incoming file</h3>
+      <p id="offer-file-name"></p>
+      <p id="offer-file-size"></p>
+      <p id="offer-from"></p>
+      <div class="actions">
+        <button id="offer-reject">Decline</button>
+        <button id="offer-accept">Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.tauri;
+    const { open } = window.__TAURI__.dialog;
+    const { listen } = window.__TAURI__.event;
+
+    let selfDeviceId = null;
+    let activePeerId = null;
+    let activePeerAddr = null;
+    let typingTimeout = null;
+    let isCurrentlyTyping = false;
+    let pendingOffer = null; // { fromDeviceId, transferId, messageId, fileName, fileSize, mimeType }
+    const transferBubbles = {}; // transfer_id -> { row, fillEl, statsEl }
+
+    const peerListEl = document.getElementById('peer-list');
+    const selfInfoEl = document.getElementById('self-info');
+    const statusBarEl = document.getElementById('status-bar');
+    const messagesEl = document.getElementById('messages');
+    const typingIndicatorEl = document.getElementById('typing-indicator');
+    const messageInputEl = document.getElementById('message-input');
+    const sendBtnEl = document.getElementById('send-btn');
+    const attachBtnEl = document.getElementById('attach-btn');
+    const offerModalEl = document.getElementById('offer-modal');
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatTime(unixSeconds) {
+      const d = new Date(unixSeconds * 1000);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let i = -1;
+      let size = bytes;
+      do { size /= 1024; i++; } while (size >= 1024 && i < units.length - 1);
+      return size.toFixed(1) + ' ' + units[i];
+    }
+
+    function renderBubble(msg) {
+      const row = document.createElement('div');
+      row.className = 'bubble-row ' + (msg.isOutgoing ? 'outgoing' : 'incoming');
+      row.dataset.messageId = msg.messageId;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (msg.isOutgoing ? 'outgoing' : 'incoming');
+      bubble.innerHTML = `<div>${escapeHtml(msg.body)}</div>` +
+        `<div class="meta">${formatTime(msg.sentAtUnix)}${msg.isOutgoing ? ' · ' + msg.status : ''}</div>`;
+
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+    }
+
+    /** Renders a file-transfer bubble with a live progress bar, tracked
+     *  in `transferBubbles` so later TransferProgress events can update
+     *  it in place without re-rendering the whole message list. */
+    function renderFileBubble(transferId, fileName, fileSize, isOutgoing) {
+      const row = document.createElement('div');
+      row.className = 'bubble-row ' + (isOutgoing ? 'outgoing' : 'incoming');
+      row.dataset.transferId = transferId;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (isOutgoing ? 'outgoing' : 'incoming') + ' file-card';
+      bubble.innerHTML = `
+        <div class="file-header">
+          <span class="file-icon">📄</span>
+          <div>
+            <div class="file-name">${escapeHtml(fileName)}</div>
+            <div class="file-size">${formatBytes(fileSize)}</div>
+          </div>
+        </div>
+        <div class="progress-track"><div class="progress-fill"></div></div>
+        <div class="file-stats"><span class="stat-percent">0%</span><span class="stat-speed"></span><span class="stat-eta"></span></div>
+        <div class="file-actions">
+          <button class="pause-btn">Pause</button>
+          <button class="cancel-btn danger">Cancel</button>
+        </div>
+      `;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+
+      const fillEl = bubble.querySelector('.progress-fill');
+      const percentEl = bubble.querySelector('.stat-percent');
+      const speedEl = bubble.querySelector('.stat-speed');
+      const etaEl = bubble.querySelector('.stat-eta');
+      const pauseBtn = bubble.querySelector('.pause-btn');
+      const cancelBtn = bubble.querySelector('.cancel-btn');
+
+      let isPaused = false;
+      pauseBtn.onclick = async () => {
+        isPaused = !isPaused;
+        pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+        try {
+          await invoke(isPaused ? 'pause_transfer_cmd' : 'resume_transfer_cmd', { transferId });
+        } catch (e) { /* non-fatal */ }
+      };
+      cancelBtn.onclick = async () => {
+        try {
+          await invoke('cancel_transfer_cmd', { peerDeviceId: activePeerId, transferId });
+        } catch (e) { /* non-fatal */ }
+      };
+
+      transferBubbles[transferId] = { fillEl, percentEl, speedEl, etaEl, pauseBtn, cancelBtn };
+      scrollToBottom();
+    }
+
+    function updateTransferProgress(progress) {
+      const refs = transferBubbles[progress.transfer_id];
+      if (!refs) return;
+      refs.fillEl.style.width = progress.percent + '%';
+      refs.percentEl.textContent = progress.percent.toFixed(0) + '%';
+      if (progress.speed_bytes_per_sec > 0) {
+        refs.speedEl.textContent = formatBytes(progress.speed_bytes_per_sec) + '/s';
+      }
+      if (progress.eta_seconds != null) {
+        refs.etaEl.textContent = Math.ceil(progress.eta_seconds) + 's left';
+      }
+      if (progress.state === 'completed' || progress.state === 'cancelled') {
+        refs.pauseBtn.style.display = 'none';
+        refs.cancelBtn.style.display = 'none';
+        if (progress.state === 'cancelled') {
+          refs.percentEl.textContent = 'Cancelled';
+        }
+      }
+    }
+
+    function updateMessageStatus(messageId, status) {
+      const row = messagesEl.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+      if (!row) return;
+      const meta = row.querySelector('.meta');
+      if (meta) {
+        const timePart = meta.textContent.split(' · ')[0];
+        meta.textContent = `${timePart} · ${status}`;
+      }
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function init() {
+      try {
+        const identityJson = await invoke('init_app_cmd');
+        const identity = JSON.parse(identityJson);
+        selfDeviceId = identity.device_id;
+        selfInfoEl.textContent = 'You: ' + selfDeviceId;
+
+        await invoke('start_networking_cmd');
+        pollPeers();
+        pollEvents();
+      } catch (err) {
+        selfInfoEl.textContent = 'Error: ' + err;
+      }
+    }
+
+    async function pollPeers() {
+      try {
+        const peersJson = await invoke('discover_peers_cmd');
+        renderPeerList(JSON.parse(peersJson));
+      } catch (err) { /* keep polling */ }
+      setTimeout(pollPeers, 2000);
+    }
+
+    function renderPeerList(peers) {
+      peerListEl.innerHTML = '';
+      if (peers.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.fontSize = '12px';
+        empty.style.color = '#9aa0a6';
+        empty.textContent = 'No devices found yet…';
+        peerListEl.appendChild(empty);
+        return;
+      }
+      for (const peer of peers) {
+        const btn = document.createElement('button');
+        btn.className = 'peer-btn' + (peer.device_id === activePeerId ? ' active' : '');
+        btn.textContent = peer.display_name + ' (' + peer.addr + ')';
+        btn.onclick = () => selectPeer(peer.device_id, peer.addr, peer.display_name);
+        peerListEl.appendChild(btn);
+      }
+    }
+
+    /**
+     * There is no bundled signaling server -- this prompts for one the
+     * user has deployed themselves (see project README) plus the target
+     * device's ID, shared out of band. A successful connection surfaces
+     * as a PeerConnected event via the normal polling path once
+     * hole-punching (or relay, once wired) completes; this handler does
+     * not know synchronously whether the connection will succeed.
+     */
+    async function onInternetConnectClicked() {
+      const serverUrl = prompt('Signaling server URL (e.g. wss://your-server/ws):');
+      if (!serverUrl) return;
+      const peerDeviceId = prompt('Peer device ID:');
+      if (!peerDeviceId) return;
+
+      statusBarEl.textContent = 'Connecting to signaling server…';
+      try {
+        await invoke('connect_signaling_server_cmd', { url: serverUrl });
+        const offerResult = await invoke('connect_to_peer_via_internet_cmd', { peerDeviceId });
+        statusBarEl.textContent = 'Internet mode: ' + offerResult + ' (waiting for connection to establish…)';
+        activePeerId = peerDeviceId;
+        activePeerAddr = null; // no LAN address -- relies on the internet-mode session already being established
+        messagesEl.innerHTML = '';
+        try {
+          const historyJson = await invoke('get_conversation_history_cmd', { peerDeviceId, limit: 200 });
+          const history = JSON.parse(historyJson);
+          for (const m of history) {
+            renderBubble({
+              messageId: m.message_id,
+              body: m.body,
+              sentAtUnix: m.sent_at,
+              isOutgoing: m.sender_device_id === 'self',
+              status: m.status,
+            });
+          }
+          scrollToBottom();
+        } catch (err) { /* fresh conversation */ }
+      } catch (err) {
+        statusBarEl.textContent = 'Internet connect failed: ' + err;
+      }
+    }
+
+    document.getElementById('internet-connect-btn').addEventListener('click', onInternetConnectClicked);
+
+    async function selectPeer(deviceId, addr, displayName) {
+      activePeerId = deviceId;
+      activePeerAddr = addr;
+      messagesEl.innerHTML = '';
+      statusBarEl.textContent = 'Connecting to ' + displayName + '…';
+
+      try {
+        const historyJson = await invoke('get_conversation_history_cmd', { peerDeviceId: deviceId, limit: 200 });
+        const history = JSON.parse(historyJson);
+        for (const m of history) {
+          if (m.type === 'file') continue; // file bubbles need live transfer state, not just history replay in this milestone
+          renderBubble({
+            messageId: m.message_id,
+            body: m.body,
+            sentAtUnix: m.sent_at,
+            isOutgoing: m.sender_device_id === 'self',
+            status: m.status,
+          });
+        }
+        scrollToBottom();
+      } catch (err) { /* fresh conversation, no history yet */ }
+
+      try {
+        await invoke('connect_to_peer_cmd', { addr, expectedDeviceId: deviceId });
+        statusBarEl.textContent = 'Connected to ' + displayName;
+      } catch (err) {
+        statusBarEl.textContent = 'Connection failed: ' + err;
+      }
+    }
+
+    async function sendMessage() {
+      const body = messageInputEl.value.trim();
+      if (!body || !activePeerId) return;
+      messageInputEl.value = '';
+      stopTyping();
+
+      try {
+        const resultJson = await invoke('send_text_message_cmd', { peerDeviceId: activePeerId, body });
+        const result = JSON.parse(resultJson);
+        renderBubble({
+          messageId: result.message_id,
+          body,
+          sentAtUnix: Math.floor(Date.now() / 1000),
+          isOutgoing: true,
+          status: 'pending',
+        });
+        scrollToBottom();
+      } catch (err) {
+        statusBarEl.textContent = 'Send failed: ' + err;
+      }
+    }
+
+    async function sendFileAtPath(filePath) {
+      if (!activePeerId) {
+        statusBarEl.textContent = 'Select a device first.';
+        return;
+      }
+      const fileName = filePath.split(/[\\/]/).pop();
+      try {
+        const resultJson = await invoke('send_file_cmd', {
+          peerDeviceId: activePeerId,
+          filePath,
+          conversationId: activePeerId,
+        });
+        const result = JSON.parse(resultJson);
+        renderFileBubble(result.transfer_id, fileName, 0, true);
+        statusBarEl.textContent = 'Offering ' + fileName + '…';
+      } catch (err) {
+        statusBarEl.textContent = 'Send file failed: ' + err;
+      }
+    }
+
+    async function sendFolderAtPath(folderPath) {
+      if (!activePeerId) {
+        statusBarEl.textContent = 'Select a device first.';
+        return;
+      }
+      const folderName = folderPath.split(/[\\/]/).pop();
+      statusBarEl.textContent = 'Preparing folder ' + folderName + '…';
+      try {
+        const resultJson = await invoke('send_folder_cmd', {
+          peerDeviceId: activePeerId,
+          folderPath,
+          conversationId: activePeerId,
+        });
+        const result = JSON.parse(resultJson);
+        for (const f of result.files) {
+          const displayName = folderName + '/' + f.relative_path;
+          renderFileBubble(f.transfer_id, displayName, 0, true);
+        }
+        statusBarEl.textContent = 'Offering folder ' + folderName + ' (' + result.files.length + ' files)…';
+      } catch (err) {
+        statusBarEl.textContent = 'Send folder failed: ' + err;
+      }
+    }
+
+    attachBtnEl.addEventListener('click', async () => {
+      try {
+        const selected = await open({ multiple: false });
+        if (selected) await sendFileAtPath(selected);
+      } catch (err) {
+        statusBarEl.textContent = 'File picker failed: ' + err;
+      }
+    });
+
+    // Folder send: a right-click (or long-press-equivalent) on the same
+    // attach button opens a directory picker instead of a file picker,
+    // rather than adding a second always-visible button -- keeps the
+    // input bar uncluttered while still surfacing the capability
+    // discoverably (a title/tooltip hints at it).
+    attachBtnEl.title = 'Click to send a file, right-click to send a folder';
+    attachBtnEl.addEventListener('contextmenu', async (e) => {
+      e.preventDefault();
+      try {
+        const selected = await open({ directory: true, multiple: false });
+        if (selected) await sendFolderAtPath(selected);
+      } catch (err) {
+        statusBarEl.textContent = 'Folder picker failed: ' + err;
+      }
+    });
+
+    function onTypingInput() {
+      if (!activePeerId) return;
+      if (!isCurrentlyTyping) {
+        isCurrentlyTyping = true;
+        invoke('send_typing_indicator_cmd', { peerDeviceId: activePeerId, conversationId: activePeerId, isTyping: true }).catch(() => {});
+      }
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(stopTyping, 2000);
+    }
+
+    function stopTyping() {
+      if (isCurrentlyTyping && activePeerId) {
+        isCurrentlyTyping = false;
+        invoke('send_typing_indicator_cmd', { peerDeviceId: activePeerId, conversationId: activePeerId, isTyping: false }).catch(() => {});
+      }
+    }
+
+    async function pollEvents() {
+      try {
+        const eventsJson = await invoke('poll_events_cmd');
+        handleEvents(JSON.parse(eventsJson));
+      } catch (err) { /* non-fatal */ }
+      setTimeout(pollEvents, 700);
+    }
+
+    function showOfferModal(offer) {
+      pendingOffer = offer;
+      document.getElementById('offer-file-name').textContent = offer.fileName;
+      document.getElementById('offer-file-size').textContent = formatBytes(offer.fileSize);
+      document.getElementById('offer-from').textContent = 'From: ' + offer.fromDeviceId;
+      offerModalEl.style.display = 'flex';
+    }
+
+    document.getElementById('offer-accept').addEventListener('click', async () => {
+      if (!pendingOffer) return;
+      const offer = pendingOffer;
+      offerModalEl.style.display = 'none';
+      pendingOffer = null;
+      try {
+        await invoke('accept_file_cmd', {
+          fromDeviceId: offer.fromDeviceId,
+          transferId: offer.transferId,
+          messageId: offer.messageId,
+          fileName: offer.fileName,
+          fileSize: offer.fileSize,
+          mimeType: offer.mimeType,
+        });
+        renderFileBubble(offer.transferId, offer.fileName, offer.fileSize, false);
+      } catch (err) {
+        statusBarEl.textContent = 'Accept failed: ' + err;
+      }
+    });
+
+    document.getElementById('offer-reject').addEventListener('click', async () => {
+      if (!pendingOffer) return;
+      const offer = pendingOffer;
+      offerModalEl.style.display = 'none';
+      pendingOffer = null;
+      try {
+        await invoke('reject_file_cmd', {
+          fromDeviceId: offer.fromDeviceId,
+          transferId: offer.transferId,
+          reason: 'Declined by user',
+        });
+      } catch (err) { /* non-fatal */ }
+    });
+
+    function handleEvents(events) {
+      let shouldScroll = false;
+      for (const evt of events) {
+        switch (evt.event) {
+          case 'TextMessage':
+            if (evt.data.from_device_id !== activePeerId) continue;
+            renderBubble({
+              messageId: evt.data.message_id,
+              body: evt.data.body,
+              sentAtUnix: evt.data.sent_at_unix,
+              isOutgoing: false,
+              status: 'delivered',
+            });
+            shouldScroll = true;
+            invoke('mark_message_read_cmd', { peerDeviceId: activePeerId, messageId: evt.data.message_id }).catch(() => {});
+            break;
+          case 'FileOffer':
+            if (evt.data.from_device_id !== activePeerId) continue;
+            showOfferModal({
+              fromDeviceId: evt.data.from_device_id,
+              transferId: evt.data.transfer_id,
+              messageId: evt.data.transfer_id, // offer's own message_id isn't separately exposed in this event; transfer_id doubles as a stable key here
+              fileName: evt.data.file_name,
+              fileSize: evt.data.file_size,
+              mimeType: evt.data.mime_type,
+            });
+            break;
+          case 'TransferProgress':
+            updateTransferProgress(evt.data);
+            break;
+          case 'TransferComplete':
+            statusBarEl.textContent = 'Transfer complete.';
+            break;
+          case 'TransferCancelled':
+            statusBarEl.textContent = 'Transfer cancelled by ' + evt.data.by_device_id;
+            break;
+          case 'Typing':
+            if (evt.data.conversation_id !== activePeerId) continue;
+            typingIndicatorEl.textContent = evt.data.is_typing ? 'typing…' : '';
+            break;
+          case 'DeliveryAck':
+            updateMessageStatus(evt.data.message_id, 'delivered');
+            break;
+          case 'ReadReceipt':
+            updateMessageStatus(evt.data.message_id, 'read');
+            break;
+          case 'PeerConnected':
+            if (evt.data.device_id === activePeerId) statusBarEl.textContent = 'Online';
+            break;
+          case 'PeerDisconnected':
+            if (evt.data.device_id === activePeerId) statusBarEl.textContent = 'Offline';
+            break;
+        }
+      }
+      if (shouldScroll) scrollToBottom();
+    }
+
+    sendBtnEl.addEventListener('click', sendMessage);
+    messageInputEl.addEventListener('input', onTypingInput);
+    messageInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    // Real drag-and-drop: Tauri's webview emits `tauri://file-drop` with
+    // actual filesystem paths (not browser File objects, which have no
+    // real path) -- this is what lets a dropped file go straight into
+    // send_file_cmd without a save-to-temp round trip.
+    const dropZone = document.getElementById('drop-zone');
+    listen('tauri://file-drop-hover', () => { dropZone.style.display = 'flex'; });
+    listen('tauri://file-drop-cancelled', () => { dropZone.style.display = 'none'; });
+    listen('tauri://file-drop', async (event) => {
+      dropZone.style.display = 'none';
+      const paths = event.payload;
+      for (const path of paths) {
+        await sendFileAtPath(path);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
