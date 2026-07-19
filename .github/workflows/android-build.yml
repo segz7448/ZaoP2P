@@ -62,8 +62,21 @@ jobs:
           fi
           chmod +x gradlew
 
+      - name: Decode release keystore
+        if: secrets.ZAO_RELEASE_KEYSTORE_B64 != ''
+        env:
+          ZAO_RELEASE_KEYSTORE_B64: ${{ secrets.ZAO_RELEASE_KEYSTORE_B64 }}
+        run: |
+          mkdir -p android/app/keystore
+          echo "$ZAO_RELEASE_KEYSTORE_B64" | base64 -d > android/app/keystore/release.jks
+
       - name: Build APK
         working-directory: android
+        env:
+          ZAO_RELEASE_KEYSTORE_PATH: keystore/release.jks
+          ZAO_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ZAO_RELEASE_KEYSTORE_PASSWORD }}
+          ZAO_RELEASE_KEY_ALIAS: ${{ secrets.ZAO_RELEASE_KEY_ALIAS }}
+          ZAO_RELEASE_KEY_PASSWORD: ${{ secrets.ZAO_RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Zip the APK output
