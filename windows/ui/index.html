@@ -173,11 +173,19 @@
 <body>
   <div id="sidebar">
     <div id="self-info">loading identity…</div>
+    <div id="self-link" style="font-size: 11px; color: #9aa0a6; padding: 0 8px 8px; word-break: break-all; display: none;"></div>
+    <button id="copy-link-btn" class="peer-btn" style="display: none; background: #263042;">
+      🔗 Copy my connect link
+    </button>
     <h2>Nearby devices</h2>
     <div id="peer-list"></div>
     <button id="internet-connect-btn" class="peer-btn" style="margin-top: 12px; background: #263042;">
       🌐 Connect over the internet…
     </button>
+    <div id="recent-peers-section" style="display: none;">
+      <h2 style="margin-top: 12px;">Recent (internet)</h2>
+      <div id="recent-peer-list"></div>
+    </div>
   </div>
 
   <div id="main" style="position: relative;">
@@ -210,6 +218,13 @@
     const { open } = window.__TAURI__.dialog;
     const { listen } = window.__TAURI__.event;
 
+    // Feature 1: signaling server is a fixed, already-deployed endpoint --
+    // nobody should have to type this in per connection. If the deployment
+    // ever moves, this is the one line to change.
+    const DEFAULT_SIGNALING_URL = 'wss://zao-signaling-server.ayiijumo.workers.dev';
+    const RECENT_PEERS_KEY = 'zaop2p_recent_internet_peers';
+    const RECENT_PEERS_MAX = 10;
+
     let selfDeviceId = null;
     let activePeerId = null;
     let activePeerAddr = null;
@@ -220,6 +235,10 @@
 
     const peerListEl = document.getElementById('peer-list');
     const selfInfoEl = document.getElementById('self-info');
+    const selfLinkEl = document.getElementById('self-link');
+    const copyLinkBtnEl = document.getElementById('copy-link-btn');
+    const recentPeersSectionEl = document.getElementById('recent-peers-section');
+    const recentPeerListEl = document.getElementById('recent-peer-list');
     const statusBarEl = document.getElementById('status-bar');
     const messagesEl = document.getElementById('messages');
     const typingIndicatorEl = document.getElementById('typing-indicator');
@@ -227,6 +246,57 @@
     const sendBtnEl = document.getElementById('send-btn');
     const attachBtnEl = document.getElementById('attach-btn');
     const offerModalEl = document.getElementById('offer-modal');
+
+    // Feature 2: a single shareable link that carries the peer's device_id
+    // (the server is already fixed, so it doesn't need to be in the link).
+    // Accepts either a full "zaop2p://connect?peer=<id>" link or a bare
+    // device_id pasted directly, so old-style sharing still works.
+    function buildConnectLink(deviceId) {
+      return 'zaop2p://connect?peer=' + encodeURIComponent(deviceId);
+    }
+
+    function parsePeerIdFromInput(input) {
+      const trimmed = input.trim();
+      if (!trimmed) return '';
+      try {
+        if (trimmed.startsWith('zaop2p://')) {
+          const url = new URL(trimmed);
+          const peer = url.searchParams.get('peer');
+          if (peer) return peer;
+        }
+      } catch (err) { /* not a valid URL -- fall through to raw id */ }
+      return trimmed;
+    }
+
+    // Feature 3: remember peers connected to over the internet so
+    // reconnecting doesn't mean re-entering their id (or link) again.
+    function loadRecentPeers() {
+      try {
+        return JSON.parse(localStorage.getItem(RECENT_PEERS_KEY) || '[]');
+      } catch (err) {
+        return [];
+      }
+    }
+
+    function saveRecentPeer(deviceId) {
+      const existing = loadRecentPeers().filter((p) => p.deviceId !== deviceId);
+      existing.unshift({ deviceId, lastConnectedUnix: Math.floor(Date.now() / 1000) });
+      localStorage.setItem(RECENT_PEERS_KEY, JSON.stringify(existing.slice(0, RECENT_PEERS_MAX)));
+      renderRecentPeers();
+    }
+
+    function renderRecentPeers() {
+      const recents = loadRecentPeers();
+      recentPeersSectionEl.style.display = recents.length > 0 ? 'block' : 'none';
+      recentPeerListEl.innerHTML = '';
+      for (const entry of recents) {
+        const btn = document.createElement('button');
+        btn.className = 'peer-btn' + (entry.deviceId === activePeerId ? ' active' : '');
+        btn.textContent = entry.deviceId;
+        btn.onclick = () => connectToInternetPeer(entry.deviceId);
+        recentPeerListEl.appendChild(btn);
+      }
+    }
 
     function escapeHtml(str) {
       const div = document.createElement('div');
@@ -355,6 +425,10 @@
         const identity = JSON.parse(identityJson);
         selfDeviceId = identity.device_id;
         selfInfoEl.textContent = 'You: ' + selfDeviceId;
+        selfLinkEl.textContent = buildConnectLink(selfDeviceId);
+        selfLinkEl.style.display = 'block';
+        copyLinkBtnEl.style.display = 'block';
+        renderRecentPeers();
 
         await invoke('start_networking_cmd');
         pollPeers();
@@ -363,6 +437,16 @@
         selfInfoEl.textContent = 'Error: ' + err;
       }
     }
+
+    copyLinkBtnEl.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(buildConnectLink(selfDeviceId));
+        copyLinkBtnEl.textContent = '✅ Copied!';
+        setTimeout(() => { copyLinkBtnEl.textContent = '🔗 Copy my connect link'; }, 1500);
+      } catch (err) {
+        statusBarEl.textContent = 'Could not copy link: ' + err;
+      }
+    });
 
     async function pollPeers() {
       try {
@@ -392,26 +476,32 @@
     }
 
     /**
-     * There is no bundled signaling server -- this prompts for one the
-     * user has deployed themselves (see project README) plus the target
-     * device's ID, shared out of band. A successful connection surfaces
-     * as a PeerConnected event via the normal polling path once
-     * hole-punching (or relay, once wired) completes; this handler does
-     * not know synchronously whether the connection will succeed.
+     * Signaling server is fixed (DEFAULT_SIGNALING_URL) -- no longer
+     * prompted for. Only the peer is asked for, and can be given either
+     * as a full zaop2p://connect?peer=<id> link (see buildConnectLink)
+     * or a bare device_id, for backwards compatibility. A successful
+     * connection surfaces as a PeerConnected event via the normal
+     * polling path once hole-punching (or relay, once wired) completes;
+     * this handler does not know synchronously whether the connection
+     * will succeed.
      */
     async function onInternetConnectClicked() {
-      const serverUrl = prompt('Signaling server URL (e.g. wss://your-server/ws):');
-      if (!serverUrl) return;
-      const peerDeviceId = prompt('Peer device ID:');
+      const rawInput = prompt('Paste a connect link or enter a peer device ID:');
+      if (!rawInput) return;
+      const peerDeviceId = parsePeerIdFromInput(rawInput);
       if (!peerDeviceId) return;
+      await connectToInternetPeer(peerDeviceId);
+    }
 
+    async function connectToInternetPeer(peerDeviceId) {
       statusBarEl.textContent = 'Connecting to signaling server…';
       try {
-        await invoke('connect_signaling_server_cmd', { url: serverUrl });
+        await invoke('connect_signaling_server_cmd', { url: DEFAULT_SIGNALING_URL });
         const offerResult = await invoke('connect_to_peer_via_internet_cmd', { peerDeviceId });
         statusBarEl.textContent = 'Internet mode: ' + offerResult + ' (waiting for connection to establish…)';
         activePeerId = peerDeviceId;
         activePeerAddr = null; // no LAN address -- relies on the internet-mode session already being established
+        saveRecentPeer(peerDeviceId);
         messagesEl.innerHTML = '';
         try {
           const historyJson = await invoke('get_conversation_history_cmd', { peerDeviceId, limit: 200 });
