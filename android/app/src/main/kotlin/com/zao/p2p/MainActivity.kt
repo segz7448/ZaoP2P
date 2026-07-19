@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
@@ -33,9 +34,20 @@ import java.util.Base64
  */
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        // Feature 1: signaling server is a fixed, already-deployed
+        // endpoint -- nobody should have to type this in per connection.
+        // If the deployment ever moves, this is the one line to change.
+        private const val DEFAULT_SIGNALING_URL = "wss://zao-signaling-server.ayiijumo.workers.dev"
+        private const val RECENT_PEERS_PREFS = "zao_recent_internet_peers"
+        private const val RECENT_PEERS_KEY = "peers"
+        private const val RECENT_PEERS_MAX = 10
+    }
+
     private val pollHandler = Handler(Looper.getMainLooper())
     private lateinit var peerListLayout: LinearLayout
     private lateinit var statusView: TextView
+    private lateinit var recentPeersLayout: LinearLayout
     private var multicastLock: WifiManager.MulticastLock? = null
     private var selfDeviceId: String = ""
     private var dbPathForBle: String = ""
@@ -138,19 +150,32 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(bleStatusView)
 
-        // Internet mode entry point: since there's no bundled signaling
-        // server, this simply prompts for one the user has deployed
-        // (see project README) plus the target device's ID -- shared
-        // out of band (e.g. the person reads it off the other device's
-        // "Your device" label and sends it over any other channel).
+        // Internet mode entry point: signaling server is fixed (see
+        // DEFAULT_SIGNALING_URL) -- only the peer needs to be supplied,
+        // either as a pasted connect link or a bare device_id shared out
+        // of band (e.g. the person reads it off the other device's "Your
+        // device" label, or shares this device's own link below).
         root.addView(Button(this).apply {
             text = "Connect over the internet…"
             setOnClickListener { showInternetConnectDialog() }
         })
+        root.addView(Button(this).apply {
+            text = "Share my connect link…"
+            setOnClickListener { shareMyConnectLink() }
+        })
+
+        root.addView(TextView(this).apply {
+            textSize = 14f
+            setPadding(0, 24, 0, 8)
+            text = "Recent (internet):"
+        })
+        recentPeersLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(recentPeersLayout)
 
         setContentView(root)
 
         requestPermissionsThenStartNetworking(dbPath, dbKey)
+        renderRecentPeers()
     }
 
     private fun requestPermissionsThenStartNetworking(dbPath: String, dbKey: String) {
@@ -371,33 +396,98 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Prompts for a signaling server URL and target device_id, connects
-     * to signaling (if not already connected), then offers candidates
-     * to that peer. There is no bundled signaling server -- see the
-     * project README for what to deploy. A successful connection
-     * surfaces as a PeerConnected event via the normal event-polling
-     * path once hole-punching (or relay, once wired) completes; this
-     * dialog itself does not open ChatActivity automatically, since the
-     * connection outcome isn't known synchronously.
+     * Feature 2: a single shareable link that carries this device's
+     * device_id (the server is already fixed, so it doesn't need to be
+     * in the link). Peers connect by pasting it into "Connect over the
+     * internet…" -- see parsePeerIdFromInput, which also still accepts a
+     * bare device_id for backwards compatibility.
+     */
+    private fun buildConnectLink(deviceId: String): String = "zaop2p://connect?peer=$deviceId"
+
+    private fun parsePeerIdFromInput(input: String): String {
+        val trimmed = input.trim()
+        if (trimmed.startsWith("zaop2p://")) {
+            val peer = Uri.parse(trimmed).getQueryParameter("peer")
+            if (!peer.isNullOrEmpty()) return peer
+        }
+        return trimmed
+    }
+
+    private fun shareMyConnectLink() {
+        val link = buildConnectLink(selfDeviceId)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, link)
+        }
+        startActivity(Intent.createChooser(sendIntent, "Share your Zao connect link"))
+    }
+
+    /**
+     * Feature 3: remembers peers connected to over the internet so
+     * reconnecting doesn't mean re-entering their id (or link) again.
+     */
+    private fun recentPeersPrefs() = getSharedPreferences(RECENT_PEERS_PREFS, MODE_PRIVATE)
+
+    private fun loadRecentPeers(): List<String> {
+        val raw = recentPeersPrefs().getString(RECENT_PEERS_KEY, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveRecentPeer(deviceId: String) {
+        val updated = listOf(deviceId) + loadRecentPeers().filter { it != deviceId }
+        val arr = JSONArray(updated.take(RECENT_PEERS_MAX))
+        recentPeersPrefs().edit().putString(RECENT_PEERS_KEY, arr.toString()).apply()
+        renderRecentPeers()
+    }
+
+    private fun renderRecentPeers() {
+        recentPeersLayout.removeAllViews()
+        val recents = loadRecentPeers()
+        if (recents.isEmpty()) {
+            recentPeersLayout.addView(TextView(this).apply {
+                text = "No internet peers yet…"
+                textSize = 13f
+            })
+            return
+        }
+        for (deviceId in recents) {
+            recentPeersLayout.addView(Button(this).apply {
+                text = deviceId
+                setOnClickListener { connectViaInternet(DEFAULT_SIGNALING_URL, deviceId) }
+            })
+        }
+    }
+
+    /**
+     * Signaling server is fixed (DEFAULT_SIGNALING_URL) -- no longer
+     * prompted for. Only the peer is asked for, and can be given either
+     * as a full connect link (see buildConnectLink) or a bare
+     * device_id. A successful connection surfaces as a PeerConnected
+     * event via the normal event-polling path once hole-punching (or
+     * relay, once wired) completes; this dialog itself does not open
+     * ChatActivity automatically, since the connection outcome isn't
+     * known synchronously.
      */
     private fun showInternetConnectDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 24, 48, 0)
         }
-        val serverInput = EditText(this).apply { hint = "wss://your-signaling-server/ws" }
-        val deviceIdInput = EditText(this).apply { hint = "Peer device ID" }
-        layout.addView(serverInput)
-        layout.addView(deviceIdInput)
+        val peerInput = EditText(this).apply { hint = "Paste connect link or peer device ID" }
+        layout.addView(peerInput)
 
         AlertDialog.Builder(this)
             .setTitle("Connect over the internet")
             .setView(layout)
             .setPositiveButton("Connect") { _, _ ->
-                val serverUrl = serverInput.text.toString().trim()
-                val peerDeviceId = deviceIdInput.text.toString().trim()
-                if (serverUrl.isNotEmpty() && peerDeviceId.isNotEmpty()) {
-                    connectViaInternet(serverUrl, peerDeviceId)
+                val peerDeviceId = parsePeerIdFromInput(peerInput.text.toString())
+                if (peerDeviceId.isNotEmpty()) {
+                    connectViaInternet(DEFAULT_SIGNALING_URL, peerDeviceId)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -416,6 +506,7 @@ class MainActivity : AppCompatActivity() {
                 val offerResult = NativeBridge.connectToPeerViaInternet(peerDeviceId)
                 runOnUiThread {
                     statusView.text = "Internet mode: $offerResult (waiting for connection to establish…)"
+                    saveRecentPeer(peerDeviceId)
                     val intent = Intent(this@MainActivity, ChatActivity::class.java).apply {
                         putExtra(ChatActivity.EXTRA_PEER_DEVICE_ID, peerDeviceId)
                         putExtra(ChatActivity.EXTRA_PEER_ADDR, "") // no LAN address -- rely on the session internet-mode connect already established
