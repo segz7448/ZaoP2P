@@ -10,7 +10,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-rusqlite = { version = "0.31", features = ["bundled-sqlcipher"] }
+rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
 snow = "0.9"
 rand = "0.8"
 rand_core = "0.6"
