@@ -10,7 +10,6 @@
         android:id="@+id/bubble"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_maxWidth="280dp"
         android:orientation="vertical"
         android:padding="10dp"
         android:background="@drawable/bubble_incoming">
@@ -19,6 +18,7 @@
             android:id="@+id/messageBody"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:maxWidth="280dp"
             android:textColor="@color/text_primary"
             android:textSize="15sp" />
 
