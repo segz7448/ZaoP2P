@@ -1,0 +1,13 @@
+# Release signing keystore -- decoded from a GitHub Secret at CI time
+# (see .github/workflows/android-build.yml). Never commit the real file.
+app/keystore/
+
+# Rust .so files copied in by the CI cross-compile step -- regenerated
+# every build, not source.
+app/src/main/jniLibs/
+
+# Standard Gradle/Android build output.
+.gradle/
+build/
+app/build/
+local.properties
