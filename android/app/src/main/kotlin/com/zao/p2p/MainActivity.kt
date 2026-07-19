@@ -20,6 +20,7 @@ import com.zao.p2p.chat.ChatActivity
 import com.zao.p2p.core.NativeBridge
 import com.zao.p2p.transport.BleMeshManager
 import com.zao.p2p.transport.WifiDirectManager
+import com.zao.p2p.transport.WifiDirectPortExchange
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
