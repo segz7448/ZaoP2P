@@ -20,10 +20,41 @@ android {
         }
     }
 
+    // Release signing credentials come from environment variables, never
+    // from anything committed to the repo -- CI injects them from GitHub
+    // Secrets (see .github/workflows/android-build.yml), and locally
+    // they'd come from your own shell env if you ever build a signed
+    // release apk on your machine. If they're not set (e.g. a local
+    // `assembleRelease` run without signing set up), the release build
+    // type below falls back to no signing config at all -- same
+    // unsigned-output behavior as before, just for local/dev use, not CI.
+    val releaseKeystorePath = System.getenv("ZAO_RELEASE_KEYSTORE_PATH")
+    val releaseKeystorePassword = System.getenv("ZAO_RELEASE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("ZAO_RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("ZAO_RELEASE_KEY_PASSWORD")
+    val hasReleaseSigningEnv = !releaseKeystorePath.isNullOrBlank() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
+    if (hasReleaseSigningEnv) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseSigningEnv) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
