@@ -63,12 +63,16 @@ jobs:
           chmod +x gradlew
 
       - name: Decode release keystore
-        if: secrets.ZAO_RELEASE_KEYSTORE_B64 != ''
         env:
           ZAO_RELEASE_KEYSTORE_B64: ${{ secrets.ZAO_RELEASE_KEYSTORE_B64 }}
         run: |
-          mkdir -p android/app/keystore
-          echo "$ZAO_RELEASE_KEYSTORE_B64" | base64 -d > android/app/keystore/release.jks
+          if [ -n "$ZAO_RELEASE_KEYSTORE_B64" ]; then
+            mkdir -p android/app/keystore
+            echo "$ZAO_RELEASE_KEYSTORE_B64" | base64 -d > android/app/keystore/release.jks
+            echo "Decoded release keystore."
+          else
+            echo "No ZAO_RELEASE_KEYSTORE_B64 secret set -- building an unsigned APK."
+          fi
 
       - name: Build APK
         working-directory: android
